@@ -1,14 +1,11 @@
 package com.data.mining
 
 import org.apache.lucene.analysis.standard.StandardAnalyzer
-import org.apache.lucene.document.Document
-import org.apache.lucene.document.Field
-import org.apache.lucene.document.StringField
-import org.apache.lucene.document.TextField
+import org.apache.lucene.document.*
 import org.apache.lucene.index.DirectoryReader
+import org.apache.lucene.index.IndexOptions
 import org.apache.lucene.index.IndexWriter
 import org.apache.lucene.index.IndexWriterConfig
-import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
 import org.apache.lucene.queryparser.classic.QueryParser
 import org.apache.lucene.search.IndexSearcher
 import org.apache.lucene.search.Query
@@ -171,11 +168,13 @@ fun createIndex() {
         val currentDocument = Document()
         currentDocument.add(StringField("title", wikiPage.title, Field.Store.YES))
 
+        val fieldType = FieldType(StringField.TYPE_STORED)
+        fieldType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
         if (wikiPage.categories.size == 0) {
-            currentDocument.add(StringField("category", "", Field.Store.YES))
+            currentDocument.add(Field("category", "", fieldType))
         } else {
             for (category in wikiPage.categories) {
-                currentDocument.add(StringField("category", category, Field.Store.YES))
+                currentDocument.add(Field("category", category, fieldType))
             }
         }
 
