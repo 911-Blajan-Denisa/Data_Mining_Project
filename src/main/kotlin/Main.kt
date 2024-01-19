@@ -1,28 +1,31 @@
 package com.data.mining
 
-import org.apache.lucene.analysis.standard.StandardAnalyzer
+import org.apache.lucene.analysis.Analyzer
+import org.apache.lucene.analysis.en.EnglishAnalyzer
 import org.apache.lucene.document.*
-import org.apache.lucene.index.DirectoryReader
-import org.apache.lucene.index.IndexOptions
-import org.apache.lucene.index.IndexWriter
-import org.apache.lucene.index.IndexWriterConfig
-import org.apache.lucene.queryparser.classic.QueryParser
-import org.apache.lucene.search.IndexSearcher
-import org.apache.lucene.search.Query
+import org.apache.lucene.index.*
+import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
+import org.apache.lucene.search.*
 import org.apache.lucene.store.Directory
 import org.apache.lucene.store.FSDirectory
 import org.apache.lucene.util.ResourceLoader
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
-import java.nio.file.FileSystems
+import java.net.URI
+import java.net.http.HttpClient
+import java.net.http.HttpRequest
+import java.net.http.HttpResponse
 import java.nio.file.Path
 import java.util.*
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
+val apiKey = "your_api_key"
 
-val indexPath = "/home/csabi100/Personal/Master/Anul1/Sem1/DataMining/project/Data_Mining_Project/src/main/resources/tmp"
+val indexPath = "/Master/Sem1/Data Mining/Data_Mining_Project/src/main/resources/tmp"
+val wikiepdiaDirectory = "/Master/Sem1/Data Mining/Data_Mining_Project/src/main/resources/wiki-subset-20140602"
+val questionsFile = "/Master/Sem1/Data Mining/Data_Mining_Project/src/main/resources/questions.txt"
 
 data class WikiPage(
     var title: String = "",
@@ -62,58 +65,129 @@ fun main() {
     }
 }
 
-fun runQuestions() {
-    val questionsFile = ResourceLoader::class.java.classLoader.getResource("questions.txt")?.path
-        ?: throw RuntimeException("Resource not found")
+fun runChatGPT(){
+    val chatGPTUrl = "https://api.openai.com/v1/completions"  // Adjust based on your API endpoint
 
+    // Search query and list of Wikipedia page answers
+    val searchQuery = "1983 Beat It"
+    val clue = "'80s NO.1 HITMAKERS"
+    val answers = listOf("Page1", "Page2") // add the rest of the pages
+
+    // Construct the prompt with the search query and answers
+    val prompt = "I have this search $searchQuery and the clue $clue.Give back the best 10 wikipedia page titles for this search, but only the titles, nothing else"
+
+    // Prepare the HTTP client
+    val client = HttpClient.newHttpClient()
+
+    val requestBody = """
+        {
+            "model": "gpt-3.5-turbo-1106",
+            "messages": "[{role: \"User\", content \"How are you?\"]",
+            "maxTokens": 100
+        }
+    """.trimIndent()
+
+    // Prepare the request
+    val request = HttpRequest.newBuilder()
+        .uri(URI.create(chatGPTUrl))
+        .header("Content-Type", "application/json")
+        .header("Authorization", "Bearer $apiKey")
+        .POST(HttpRequest.BodyPublishers.ofString(requestBody))
+        .build()
+
+    try {
+        // Send the request and get the response
+        val response = client.send(request, HttpResponse.BodyHandlers.ofString())
+
+        // Parse and handle the response
+        if (response.statusCode() == 200) {
+            // Process the rearranged result from the response
+            val rearrangedResult = response.body()
+            println("Rearranged result: $rearrangedResult")
+        } else {
+            println("Error: ${response.statusCode()}")
+            println(response.body())
+        }
+    } catch (e: Exception) {
+        e.printStackTrace()
+    }
+}
+
+fun runQuestions() {
     BufferedReader(FileReader(questionsFile)).use { reader ->
         var line: String?
 
-        // Read lines from the file
+        var listResults: List<Int> = listOf()
+
+        val pattern = Regex("[.,:;!?-]")
+
         while (reader.readLine().also { line = it } != null) {
             if (line.isNullOrBlank()) {
                 continue
             }
             val category = line!!.trim()
-                .replace("-", "\\-")
-                .replace("!", "\\!")
+//                .replace("-", "\\-")
+//                .replace("!", "\\!")
+                .substringBefore("(")
+                .replace(pattern, "")
             reader.readLine().also { line = it }
             val content = line!!.trim()
-                .replace("-", "\\-")
-                .replace("!", "\\!")
+//                .replace("-", "\\-")
+//                .replace("!", "\\!")
+                .replace(pattern, "")
             reader.readLine().also { line = it }
             val expectedResult = line!!.trim()
-                .replace("-", "\\-")
-                .replace("!", "\\!")
-            runSingleQuery(category, content, expectedResult)
+            listResults += runSingleQuery(category, content, expectedResult)
         }
+
+        println(listResults)
+        val formattedMRR = String.format("%.3f", computeMRR(listResults))
+        println("The MRR is : ${formattedMRR}")
+        println("The correct number of top positions : ${listResults.filter { x-> x == 1 }.count()}/100")
     }
 }
 
-fun runSingleQuery(category: String, content: String, expectedResult: String) {
+fun runSingleQuery(category: String, content: String, expectedResult: String): Int {
     try {
         val directory: Directory = FSDirectory.open(Path.of(indexPath))
         val reader = DirectoryReader.open(directory)
 
-        val analyzer = StandardAnalyzer()
-        val special = "content:\"$content\" OR category:\"$category\""
-        val q: Query = QueryParser("content", analyzer).parse(special)
-        val hitsPerPage = 10
+        var newCategory = category.substringBefore("(")
+
+        var fields: Array<String> = arrayOf("content")
+
+        var queryString = "($content) OR ($newCategory)"
+
+        val parser = MultiFieldQueryParser(fields, getAnalyzer())
+
+        val query: Query = parser.parse(queryString)
+
+        val hitsPerPage = 30
 
         val searcher = IndexSearcher(reader)
-        val docs = searcher.search(q, hitsPerPage)
+        val docs = searcher.search(query, hitsPerPage)
         val hits = docs.scoreDocs
         println("Found " + hits.size + " hits.")
+
+        var correctAnswers = expectedResult.split("|")
+        var result: Int = 0
+
         for (i in hits.indices) {
             val docId = hits[i].doc
             val d = searcher.doc(docId)
             println((i + 1).toString() + ". " + "\t" + d["title"])
+            if (correctAnswers.contains(d["title"]) && result == 0)
+                result = i+1
         }
 
         println("content: $content")
+        println("category: $category")
         println("expected result: $expectedResult\n")
+
+        return result
     } catch (ex: RuntimeException) {
         println(ex.message)
+        return 0
     }
 
 }
@@ -122,14 +196,21 @@ fun runQuery() {
     val directory: Directory = FSDirectory.open(Path.of(indexPath))
     val reader = DirectoryReader.open(directory)
 
-    print("text: ")
-    val queryStr = readlnOrNull()
-    val analyzer = StandardAnalyzer()
-    val q: Query = QueryParser("content", analyzer).parse(queryStr)
-    val hitsPerPage = 10
+    val content = "In 2010: As Sherlock Holmes on film"
+    val category = "GOLDEN GLOBE WINNERS"
+
+    val fields = arrayOf("content", "category")
+
+    val queryString = "${content} AND ${category}"
+
+    val parser = MultiFieldQueryParser(fields, getAnalyzer())
+
+    val query: Query = parser.parse(queryString)
+
+    val hitsPerPage = 30
 
     val searcher = IndexSearcher(reader)
-    val docs = searcher.search(q, hitsPerPage)
+    val docs = searcher.search(query, hitsPerPage)
     val hits = docs.scoreDocs
     println("Found " + hits.size + " hits.")
     for (i in hits.indices) {
@@ -143,15 +224,15 @@ fun createIndex() {
     val directory = ResourceLoader::class.java.classLoader.getResource("wiki-subset-20140602")?.path
         ?: throw RuntimeException("Resource not found")
 
-    val analyzer = StandardAnalyzer()
-    val indexPath = FileSystems.getDefault()
-        .getPath(indexPath)
-    val index: Directory = FSDirectory.open(indexPath)
+    val analyzer = getAnalyzer()
+    val path = Path.of(indexPath)
+
+    val index: Directory = FSDirectory.open(path)
 
     val config = IndexWriterConfig(analyzer)
     val indexWriter = IndexWriter(index, config)
 
-    val files = getFilesFromDirectory(directory)
+    val files = getFilesFromDirectory(wikiepdiaDirectory)
 
     var pageSet: MutableSet<WikiPage> = mutableSetOf()
     var redirectPageTitles: MutableList<Pair<String, String>> = mutableListOf()
@@ -249,6 +330,18 @@ fun processFile(
     return PageParseResult(pageSet, redirectPageTitles)
 }
 
+fun getAnalyzer(): Analyzer {
+    return EnglishAnalyzer()
+}
+
+fun computeMRR(ranks: List<Int>): Double {
+    if (ranks.isEmpty()) {
+        throw IllegalArgumentException("Input list of ranks is empty.")
+    }
+
+    return ranks.map { if (it == 0) 0.0 else 1.0 / it }.average()
+}
+
 fun isTitle(input: String?): Boolean {
     if (input == null) {
         return false
@@ -272,7 +365,7 @@ fun isCategoryLine(input: String?): Boolean {
 }
 
 fun tokenizeCategoryLine(input: String): MutableList<String> {
-    return input.substring("CATEGORIES:".length, input.length).split(",").toMutableList()
+    return input.substring("CATEGORIES: ".length, input.length).split(", ").toMutableList()
 }
 
 fun isRedirectLine(input: String?): Boolean {
@@ -283,7 +376,7 @@ fun isRedirectLine(input: String?): Boolean {
 }
 
 fun getRedirectPageTitle(input: String): String {
-    return input.substring("#REDIRECT".length, input.length)
+    return input.substring("#REDIRECT ".length, input.length)
 }
 
 fun getFilesFromDirectory(directory: String): MutableList<String> {
