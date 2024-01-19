@@ -21,6 +21,7 @@ import java.util.*
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
+
 val apiKey = "your_api_key"
 
 val indexPath = "/Master/Sem1/Data Mining/Data_Mining_Project/src/main/resources/tmp"
@@ -35,7 +36,7 @@ data class WikiPage(
 
 data class PageParseResult(
     val pageSet: MutableSet<WikiPage>,
-    val redirectPageTitles: MutableList<Pair<String, String>>
+    val redirectPageTitles: MutableMap<String, MutableList<String>>
 )
 
 fun printMenu() {
@@ -66,28 +67,24 @@ fun main() {
 }
 
 fun runChatGPT(){
-    val chatGPTUrl = "https://api.openai.com/v1/completions"  // Adjust based on your API endpoint
+    val chatGPTUrl = "https://api.openai.com/v1/completions"
 
-    // Search query and list of Wikipedia page answers
     val searchQuery = "1983 Beat It"
     val clue = "'80s NO.1 HITMAKERS"
-    val answers = listOf("Page1", "Page2") // add the rest of the pages
+    val answers = listOf("Page1", "Page2")
 
-    // Construct the prompt with the search query and answers
-    val prompt = "I have this search $searchQuery and the clue $clue.Give back the best 10 wikipedia page titles for this search, but only the titles, nothing else"
+    val message = "I have this search $searchQuery and the clue $clue.Give back the best 10 wikipedia page titles for this search, but only the titles, nothing else"
 
-    // Prepare the HTTP client
     val client = HttpClient.newHttpClient()
 
     val requestBody = """
         {
             "model": "gpt-3.5-turbo-1106",
-            "messages": "[{role: \"User\", content \"How are you?\"]",
+            "messages": "[{role: \"User\", content \"$message\"]",
             "maxTokens": 100
         }
     """.trimIndent()
 
-    // Prepare the request
     val request = HttpRequest.newBuilder()
         .uri(URI.create(chatGPTUrl))
         .header("Content-Type", "application/json")
@@ -96,12 +93,9 @@ fun runChatGPT(){
         .build()
 
     try {
-        // Send the request and get the response
         val response = client.send(request, HttpResponse.BodyHandlers.ofString())
 
-        // Parse and handle the response
         if (response.statusCode() == 200) {
-            // Process the rearranged result from the response
             val rearrangedResult = response.body()
             println("Rearranged result: $rearrangedResult")
         } else {
@@ -126,14 +120,9 @@ fun runQuestions() {
                 continue
             }
             val category = line!!.trim()
-//                .replace("-", "\\-")
-//                .replace("!", "\\!")
-                .substringBefore("(")
                 .replace(pattern, "")
             reader.readLine().also { line = it }
             val content = line!!.trim()
-//                .replace("-", "\\-")
-//                .replace("!", "\\!")
                 .replace(pattern, "")
             reader.readLine().also { line = it }
             val expectedResult = line!!.trim()
@@ -152,15 +141,42 @@ fun runSingleQuery(category: String, content: String, expectedResult: String): I
         val directory: Directory = FSDirectory.open(Path.of(indexPath))
         val reader = DirectoryReader.open(directory)
 
+//        val term1: Term = Term("content", content)
+//        //create the term query object
+//        //create the term query object
+//        val query1: Query = TermQuery(term1)
+//
+//        val term2: Term = Term("category", category)
+//        //create the term query object
+//        //create the term query object
+//        val query2: Query = PrefixQuery(term2)
+//
+//        val query = BooleanQuery.Builder()
+//        query.add(query1, BooleanClause.Occur.SHOULD)
+//        query.add(query2, BooleanClause.Occur.SHOULD)
+
+//        val query1: Query = MultiFieldQueryParser.parse(arrayOf( content.trim(), category.trim(), content.trim()), arrayOf("content", "category", "title"), getAnalyzer())
+////        val query2: Query = MultiFieldQueryParser.parse(arrayOf(category.trim()), arrayOf("category"), getAnalyzer())
+////        val query3: Query = MultiFieldQueryParser.parse(arrayOf(content.trim()), arrayOf("title"), getAnalyzer())
+//
+//
+//        // Create a BooleanQuery to combine the queries for different fields
+//        val booleanQuery = BooleanQuery.Builder()
+//            .add(query1, BooleanClause.Occur.SHOULD)
+////            .add(query2, BooleanClause.Occur.SHOULD)
+////            .add(query3, BooleanClause.Occur.SHOULD)
+//            .build()
+
         var newCategory = category.substringBefore("(")
 
-        var fields: Array<String> = arrayOf("content")
+        var fields: Array<String> = arrayOf("content", "category")
 
         var queryString = "($content) OR ($newCategory)"
 
         val parser = MultiFieldQueryParser(fields, getAnalyzer())
 
         val query: Query = parser.parse(queryString)
+
 
         val hitsPerPage = 30
 
@@ -170,13 +186,14 @@ fun runSingleQuery(category: String, content: String, expectedResult: String): I
         println("Found " + hits.size + " hits.")
 
         var correctAnswers = expectedResult.split("|")
-        var result: Int = 0
+        var result = 0
 
         for (i in hits.indices) {
             val docId = hits[i].doc
             val d = searcher.doc(docId)
-            println((i + 1).toString() + ". " + "\t" + d["title"])
-            if (correctAnswers.contains(d["title"]) && result == 0)
+            val documentTitles = d.getValues("title").asList()
+            println((i + 1).toString() + ". " + "\t" + documentTitles.joinToString())
+            if (correctAnswers.intersect(documentTitles).isNotEmpty() && result == 0)
                 result = i+1
         }
 
@@ -196,12 +213,12 @@ fun runQuery() {
     val directory: Directory = FSDirectory.open(Path.of(indexPath))
     val reader = DirectoryReader.open(directory)
 
-    val content = "In 2010: As Sherlock Holmes on film"
-    val category = "GOLDEN GLOBE WINNERS"
+    print("text: ")
+    val content = readlnOrNull()
 
-    val fields = arrayOf("content", "category")
+    val fields = arrayOf("content")
 
-    val queryString = "${content} AND ${category}"
+    val queryString = "${content}"
 
     val parser = MultiFieldQueryParser(fields, getAnalyzer())
 
@@ -216,7 +233,8 @@ fun runQuery() {
     for (i in hits.indices) {
         val docId = hits[i].doc
         val d = searcher.doc(docId)
-        println((i + 1).toString() + ". " + "\t" + d["title"])
+        val documentTitles = d.getValues("title").asList()
+        println((i + 1).toString() + ". " + "\t" + documentTitles.joinToString())
     }
 }
 
@@ -235,7 +253,7 @@ fun createIndex() {
     val files = getFilesFromDirectory(wikiepdiaDirectory)
 
     var pageSet: MutableSet<WikiPage> = mutableSetOf()
-    var redirectPageTitles: MutableList<Pair<String, String>> = mutableListOf()
+    var redirectPageTitles: MutableMap<String, MutableList<String>> = mutableMapOf()
 
     for (file in files) {
         val result = processFile(file, pageSet, redirectPageTitles)
@@ -246,16 +264,26 @@ fun createIndex() {
     println("Finished parsing files")
 
     for (wikiPage in pageSet) {
+        val redirectedPages = redirectPageTitles[wikiPage.title]
         val currentDocument = Document()
-        currentDocument.add(StringField("title", wikiPage.title, Field.Store.YES))
+        val titleFieldType = FieldType(StringField.TYPE_STORED)
 
-        val fieldType = FieldType(StringField.TYPE_STORED)
-        fieldType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
+        titleFieldType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
+        currentDocument.add(Field("title", wikiPage.title, titleFieldType))
+
+        if (redirectedPages != null) {
+            for (title in redirectedPages){
+                currentDocument.add(Field("title", title, titleFieldType))
+            }
+        }
+
+        val categoryFieldType = FieldType(StringField.TYPE_STORED)
+        categoryFieldType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
         if (wikiPage.categories.size == 0) {
-            currentDocument.add(Field("category", "", fieldType))
+            currentDocument.add(Field("category", "", categoryFieldType))
         } else {
             for (category in wikiPage.categories) {
-                currentDocument.add(Field("category", category, fieldType))
+                currentDocument.add(Field("category", category, categoryFieldType))
             }
         }
 
@@ -282,10 +310,10 @@ class CustomComparator : Comparator<WikiPage> {
 fun processFile(
     filePath: String,
     pageSet: MutableSet<WikiPage>,
-    redirectPageTitles: MutableList<Pair<String, String>>
+    redirectPageTitles: MutableMap<String, MutableList<String>>
 ): PageParseResult {
     val auxPageSet: MutableSet<WikiPage> = TreeSet(CustomComparator())
-    val auxRedirectPageTitles: MutableList<Pair<String, String>> = mutableListOf()
+    val auxRedirectPageTitles: MutableMap<String, MutableList<String>> = mutableMapOf()
     BufferedReader(FileReader(filePath)).use { reader ->
         var line: String?
 
@@ -313,7 +341,10 @@ fun processFile(
                 page.categories = tokenizeCategoryLine(line!!)
             } else if (isRedirectLine(line)) {
                 // line with redirect link
-                auxRedirectPageTitles.add(Pair(page.title, getRedirectPageTitle(line!!)))
+                val redirectPage = getRedirectPageTitle(line!!)
+                if (!auxRedirectPageTitles.containsKey(redirectPage))
+                    auxRedirectPageTitles[redirectPage] = mutableListOf()
+                auxRedirectPageTitles[redirectPage]?.add(page.title)
                 wasRedirect = true
             } else {
                 pageBody += line
@@ -325,7 +356,14 @@ fun processFile(
         }
     }
     pageSet.addAll(auxPageSet)
-    redirectPageTitles.addAll(auxRedirectPageTitles)
+    for (item in auxRedirectPageTitles){
+        if (redirectPageTitles.containsKey(item.key)) {
+            redirectPageTitles[item.key]?.addAll(item.value)
+        }
+        else {
+            redirectPageTitles[item.key] = item.value
+        }
+    }
 
     return PageParseResult(pageSet, redirectPageTitles)
 }
