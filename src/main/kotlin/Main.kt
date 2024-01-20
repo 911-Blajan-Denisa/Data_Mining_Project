@@ -8,7 +8,6 @@ import org.apache.lucene.queryparser.classic.MultiFieldQueryParser
 import org.apache.lucene.search.*
 import org.apache.lucene.store.Directory
 import org.apache.lucene.store.FSDirectory
-import org.apache.lucene.util.ResourceLoader
 import java.io.BufferedReader
 import java.io.File
 import java.io.FileReader
@@ -21,8 +20,7 @@ import java.util.*
 import java.util.regex.Matcher
 import java.util.regex.Pattern
 
-
-val apiKey = "your_api_key"
+val OpenAI_APIKey = "your_api_key"
 
 val indexPath = "/Master/Sem1/Data Mining/Data_Mining_Project/src/main/resources/tmp"
 val wikiepdiaDirectory = "/Master/Sem1/Data Mining/Data_Mining_Project/src/main/resources/wiki-subset-20140602"
@@ -39,11 +37,17 @@ data class PageParseResult(
     val redirectPageTitles: MutableMap<String, MutableList<String>>
 )
 
+class CustomComparator : Comparator<WikiPage> {
+    override fun compare(o1: WikiPage, o2: WikiPage): Int {
+        return o1.title.compareTo(o2.title)
+    }
+}
+
 fun printMenu() {
     println("==========")
     println("1. Create index")
     println("2. Run query")
-    println("3. Run questions")
+    println("3. Run default questions")
     println("0. Exit")
     println("==========")
 }
@@ -59,9 +63,9 @@ fun main() {
         } else if (input == "1") {
             createIndex()
         } else if (input == "2") {
-            runQuery()
+            runUserQuery()
         } else if (input == "3") {
-            runQuestions()
+            runDefaultQuestions()
         }
     }
 }
@@ -69,11 +73,20 @@ fun main() {
 fun runChatGPT(){
     val chatGPTUrl = "https://api.openai.com/v1/completions"
 
-    val searchQuery = "1983 Beat It"
-    val clue = "'80s NO.1 HITMAKERS"
-    val answers = listOf("Page1", "Page2")
+    val clue = "In 2010 As Sherlock Holmes on film"
+    val category = "GOLDEN GLOBE WINNERS"
+    val answers = listOf("1. I. A. L. Diamond",
+        "2. Sherlock Holmes, SherlockHolmes",
+        "3. Hans Zimmer",
+        "4. Irene Adler",
+        "5. Edward Hardwicke",
+        "6. Basil Rathbone",
+        "7. Jeremy Brett",
+        "8. The Five Orange Pips",
+        "9. Feluda",
+        "10. Robert Downey, Jr.")
 
-    val message = "I have this search $searchQuery and the clue $clue.Give back the best 10 wikipedia page titles for this search, but only the titles, nothing else"
+    val message = "I am looking to find wikipedia pages for this clue: $clue and the category: $category. Also, there is a list with 10 wikipedia pages as possible answers: ${answers.joinToString()}. Return the 10 wikipedia page titles after you re-rank them for a higher chance of finding the clue in the wikipedia page, but only the titles, nothing else."
 
     val client = HttpClient.newHttpClient()
 
@@ -88,7 +101,7 @@ fun runChatGPT(){
     val request = HttpRequest.newBuilder()
         .uri(URI.create(chatGPTUrl))
         .header("Content-Type", "application/json")
-        .header("Authorization", "Bearer $apiKey")
+        .header("Authorization", "Bearer $OpenAI_APIKey")
         .POST(HttpRequest.BodyPublishers.ofString(requestBody))
         .build()
 
@@ -96,8 +109,8 @@ fun runChatGPT(){
         val response = client.send(request, HttpResponse.BodyHandlers.ofString())
 
         if (response.statusCode() == 200) {
-            val rearrangedResult = response.body()
-            println("Rearranged result: $rearrangedResult")
+            val rearrangedResults = response.body()
+            println("Rearranged result: $rearrangedResults")
         } else {
             println("Error: ${response.statusCode()}")
             println(response.body())
@@ -107,141 +120,8 @@ fun runChatGPT(){
     }
 }
 
-fun runQuestions() {
-    BufferedReader(FileReader(questionsFile)).use { reader ->
-        var line: String?
-
-        var listResults: List<Int> = listOf()
-
-        val pattern = Regex("[.,:;!?-]")
-
-        while (reader.readLine().also { line = it } != null) {
-            if (line.isNullOrBlank()) {
-                continue
-            }
-            val category = line!!.trim()
-                .replace(pattern, "")
-            reader.readLine().also { line = it }
-            val content = line!!.trim()
-                .replace(pattern, "")
-            reader.readLine().also { line = it }
-            val expectedResult = line!!.trim()
-            listResults += runSingleQuery(category, content, expectedResult)
-        }
-
-        println(listResults)
-        val formattedMRR = String.format("%.3f", computeMRR(listResults))
-        println("The MRR is : ${formattedMRR}")
-        println("The correct number of top positions : ${listResults.filter { x-> x == 1 }.count()}/100")
-    }
-}
-
-fun runSingleQuery(category: String, content: String, expectedResult: String): Int {
-    try {
-        val directory: Directory = FSDirectory.open(Path.of(indexPath))
-        val reader = DirectoryReader.open(directory)
-
-//        val term1: Term = Term("content", content)
-//        //create the term query object
-//        //create the term query object
-//        val query1: Query = TermQuery(term1)
-//
-//        val term2: Term = Term("category", category)
-//        //create the term query object
-//        //create the term query object
-//        val query2: Query = PrefixQuery(term2)
-//
-//        val query = BooleanQuery.Builder()
-//        query.add(query1, BooleanClause.Occur.SHOULD)
-//        query.add(query2, BooleanClause.Occur.SHOULD)
-
-//        val query1: Query = MultiFieldQueryParser.parse(arrayOf( content.trim(), category.trim(), content.trim()), arrayOf("content", "category", "title"), getAnalyzer())
-////        val query2: Query = MultiFieldQueryParser.parse(arrayOf(category.trim()), arrayOf("category"), getAnalyzer())
-////        val query3: Query = MultiFieldQueryParser.parse(arrayOf(content.trim()), arrayOf("title"), getAnalyzer())
-//
-//
-//        // Create a BooleanQuery to combine the queries for different fields
-//        val booleanQuery = BooleanQuery.Builder()
-//            .add(query1, BooleanClause.Occur.SHOULD)
-////            .add(query2, BooleanClause.Occur.SHOULD)
-////            .add(query3, BooleanClause.Occur.SHOULD)
-//            .build()
-
-        var newCategory = category.substringBefore("(")
-
-        var fields: Array<String> = arrayOf("content", "category")
-
-        var queryString = "($content) OR ($newCategory)"
-
-        val parser = MultiFieldQueryParser(fields, getAnalyzer())
-
-        val query: Query = parser.parse(queryString)
-
-
-        val hitsPerPage = 30
-
-        val searcher = IndexSearcher(reader)
-        val docs = searcher.search(query, hitsPerPage)
-        val hits = docs.scoreDocs
-        println("Found " + hits.size + " hits.")
-
-        var correctAnswers = expectedResult.split("|")
-        var result = 0
-
-        for (i in hits.indices) {
-            val docId = hits[i].doc
-            val d = searcher.doc(docId)
-            val documentTitles = d.getValues("title").asList()
-            println((i + 1).toString() + ". " + "\t" + documentTitles.joinToString())
-            if (correctAnswers.intersect(documentTitles).isNotEmpty() && result == 0)
-                result = i+1
-        }
-
-        println("content: $content")
-        println("category: $category")
-        println("expected result: $expectedResult\n")
-
-        return result
-    } catch (ex: RuntimeException) {
-        println(ex.message)
-        return 0
-    }
-
-}
-
-fun runQuery() {
-    val directory: Directory = FSDirectory.open(Path.of(indexPath))
-    val reader = DirectoryReader.open(directory)
-
-    print("text: ")
-    val content = readlnOrNull()
-
-    val fields = arrayOf("content")
-
-    val queryString = "${content}"
-
-    val parser = MultiFieldQueryParser(fields, getAnalyzer())
-
-    val query: Query = parser.parse(queryString)
-
-    val hitsPerPage = 30
-
-    val searcher = IndexSearcher(reader)
-    val docs = searcher.search(query, hitsPerPage)
-    val hits = docs.scoreDocs
-    println("Found " + hits.size + " hits.")
-    for (i in hits.indices) {
-        val docId = hits[i].doc
-        val d = searcher.doc(docId)
-        val documentTitles = d.getValues("title").asList()
-        println((i + 1).toString() + ". " + "\t" + documentTitles.joinToString())
-    }
-}
-
 fun createIndex() {
-    val directory = ResourceLoader::class.java.classLoader.getResource("wiki-subset-20140602")?.path
-        ?: throw RuntimeException("Resource not found")
-
+    deleteFilesFromDirectory(indexPath)
     val analyzer = getAnalyzer()
     val path = Path.of(indexPath)
 
@@ -280,6 +160,7 @@ fun createIndex() {
         val categoryFieldType = FieldType(StringField.TYPE_STORED)
         categoryFieldType.setIndexOptions(IndexOptions.DOCS_AND_FREQS_AND_POSITIONS)
         if (wikiPage.categories.size == 0) {
+            //if there is not category at all we have issues at querries
             currentDocument.add(Field("category", "", categoryFieldType))
         } else {
             for (category in wikiPage.categories) {
@@ -298,12 +179,107 @@ fun createIndex() {
     indexWriter.close()
 
     println("Finished all")
-
 }
 
-class CustomComparator : Comparator<WikiPage> {
-    override fun compare(o1: WikiPage, o2: WikiPage): Int {
-        return o1.title.compareTo(o2.title)
+fun runUserQuery() {
+    val directory: Directory = FSDirectory.open(Path.of(indexPath))
+    val reader = DirectoryReader.open(directory)
+
+    print("text: ")
+    val content = readlnOrNull()
+
+    val fields = arrayOf("content")
+
+    val queryString = "${content}"
+
+    val parser = MultiFieldQueryParser(fields, getAnalyzer())
+
+    val query: Query = parser.parse(queryString)
+
+    val hitsPerPage = 10
+
+    val searcher = IndexSearcher(reader)
+    val docs = searcher.search(query, hitsPerPage)
+    val hits = docs.scoreDocs
+    println("Found " + hits.size + " hits.")
+    for (i in hits.indices) {
+        val docId = hits[i].doc
+        val d = searcher.doc(docId)
+        val documentTitles = d.getValues("title").asList()
+        println((i + 1).toString() + ". " + documentTitles.joinToString())
+    }
+}
+
+fun runDefaultQuestions() {
+    BufferedReader(FileReader(questionsFile)).use { reader ->
+        var line: String?
+
+        var listResults: List<Int> = listOf()
+
+        val pattern = Regex("[.,:;!?-]")
+
+        while (reader.readLine().also { line = it } != null) {
+            if (line.isNullOrBlank()) {
+                continue
+            }
+            val category = line!!.trim()
+                .replace(pattern, "")
+            reader.readLine().also { line = it }
+            val clue = line!!.trim()
+                .replace(pattern, "")
+            reader.readLine().also { line = it }
+            val answer = line!!.trim()
+            listResults += runSingleQuery(category, clue, answer)
+        }
+
+        val formattedMRR = String.format("%.3f", computeMRR(listResults))
+        println("The MRR is : ${formattedMRR}")
+        println("The correct number of top positions : ${listResults.filter { x-> x == 1 }.count()}/100")
+    }
+}
+
+fun runSingleQuery(category: String, clue: String, answer: String): Int {
+    try {
+        val directory: Directory = FSDirectory.open(Path.of(indexPath))
+        val reader = DirectoryReader.open(directory)
+
+        var newCategory = category.substringBefore("(")
+
+        var fields: Array<String> = arrayOf("content", "category")
+
+        var queryString = "($clue) OR ($newCategory)"
+
+        val parser = MultiFieldQueryParser(fields, getAnalyzer())
+
+        val query: Query = parser.parse(queryString)
+
+        val hitsPerPage = 30
+
+        val searcher = IndexSearcher(reader)
+        val docs = searcher.search(query, hitsPerPage)
+        val hits = docs.scoreDocs
+        println("Found " + hits.size + " hits.")
+
+        var correctAnswers = answer.split("|")
+        var result = 0
+
+        for (i in hits.indices) {
+            val docId = hits[i].doc
+            val d = searcher.doc(docId)
+            val documentTitles = d.getValues("title").asList()
+            println((i + 1).toString() + ". " + documentTitles.joinToString())
+            if (correctAnswers.intersect(documentTitles).isNotEmpty() && result == 0)
+                result = i+1
+        }
+
+        println("clue: $clue")
+        println("category: $category")
+        println("expected answer: $answer\n")
+
+        return result
+    } catch (ex: RuntimeException) {
+        println(ex.message)
+        return 0
     }
 }
 
@@ -377,6 +353,7 @@ fun computeMRR(ranks: List<Int>): Double {
         throw IllegalArgumentException("Input list of ranks is empty.")
     }
 
+    // if the rank is 0, it is considered the document was not found, so we use as reciprocal rank 0
     return ranks.map { if (it == 0) 0.0 else 1.0 / it }.average()
 }
 
@@ -431,4 +408,18 @@ fun getFilesFromDirectory(directory: String): MutableList<String> {
         }
     }
     return directories
+}
+
+fun deleteFilesFromDirectory(directory: String) {
+    val folder = File(directory)
+    if (!folder.exists() && !folder.isDirectory) {
+        throw RuntimeException("Folder does not exist")
+    }
+
+    val files = folder.listFiles() ?: return
+    for (file in files) {
+        if (file.isFile) {
+            file.delete()
+        }
+    }
 }
