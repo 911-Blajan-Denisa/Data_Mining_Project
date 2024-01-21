@@ -412,8 +412,12 @@ fun getFilesFromDirectory(directory: String): MutableList<String> {
 
 fun deleteFilesFromDirectory(directory: String) {
     val folder = File(directory)
-    if (!folder.exists() && !folder.isDirectory) {
-        throw RuntimeException("Folder does not exist")
+    if (!folder.exists()) {
+        return
+    }
+
+    if (!folder.isDirectory()){
+        throw RuntimeException("Folder is not directory")
     }
 
     val files = folder.listFiles() ?: return
