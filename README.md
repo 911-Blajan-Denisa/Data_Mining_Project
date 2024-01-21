@@ -8,4 +8,4 @@ This project was made in Kotlin programming language using IntelliJ IDEA as IDE.
 - in the file src/main/kotlin/Main.kt, click on Run Main.kt button 
 - a menu with the options will be displayed on the console, enter the number of option
 
-You can either create the index (it will take about 3 to 5 minutes) or you can downloaded it from [here] (https://drive.google.com/drive/folders/1kCe_kGej6Lp9rKOEPNhzOeBegjGeleLZ) and copy all the files inside the path you specified.
+You can either create the index (it will take about 3 to 5 minutes) or you can downloaded it from [here](https://drive.google.com/drive/folders/1kCe_kGej6Lp9rKOEPNhzOeBegjGeleLZ) and copy all the files inside the path you specified.
